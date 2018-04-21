@@ -1,6 +1,7 @@
 <?php
 namespace OAuthServer\Controller;
 
+use App\Controller\AppController;
 use Cake\Core\Configure;
 use Cake\Event\Event;
 use Cake\Event\EventManager;
@@ -20,18 +21,16 @@ use League\OAuth2\Server\Util\RedirectUri;
  */
 class OAuthController extends AppController
 {
-    /** @var AuthCodeGrant|null */
-    private $authCodeGrant;
-
-    /** @var array|null */
-    private $authParams;
-
     /**
      * @return void
      */
     public function initialize()
     {
         parent::initialize();
+
+        if (!$this->components()->has('Auth')) {
+            throw new \RuntimeException("OAuthServer requires Auth component to be loaded and properly configured");
+        }
 
         $this->loadComponent('OAuthServer.OAuth', (array)Configure::read('OAuthServer'));
         $this->loadComponent('RequestHandler');
@@ -45,25 +44,7 @@ class OAuthController extends AppController
     {
         parent::beforeFilter($event);
 
-        if (!$this->components()->has('Auth')) {
-            throw new \RuntimeException("OAuthServer requires Auth component to be loaded and properly configured");
-        }
-
-        $this->Auth->allow(['oauth', 'accessToken']);
-        $this->Auth->deny(['authorize']);
-
-        if ($this->request->param('action') == 'authorize') {
-            // OAuth spec requires to check OAuth authorize params as a first thing, regardless of whether user is logged in or not.
-            // AuthComponent checks user after beforeFilter by default, this is the place to do it.
-            try {
-                $this->authCodeGrant = $this->OAuth->Server->getGrantType('authorization_code');
-                $this->authParams = $this->authCodeGrant->checkAuthorizeParams();
-            } catch (OAuthException $e) {
-                // ignoring $e->getHttpHeaders() for now
-                // it only sends WWW-Authenticate header in case of InvalidClientException
-                throw new HttpException($e->getMessage(), $e->httpStatusCode, $e);
-            }
-        }
+        $this->Auth->allow(['oauth', 'authorize', 'accessToken']);
     }
 
     /**
@@ -84,6 +65,22 @@ class OAuthController extends AppController
      */
     public function authorize()
     {
+    /** @var AuthCodeGrant $authCodeGrant */
+        try {
+            $authCodeGrant = $this->OAuth->Server->getGrantType('authorization_code');
+            $authParams = $authCodeGrant->checkAuthorizeParams();
+        } catch (OAuthException $e) {
+            // ignoring $e->getHttpHeaders() for now
+            // it only sends WWW-Authenticate header in case of InvalidClientException
+            throw new HttpException($e->getMessage(), $e->httpStatusCode, $e);
+        }
+
+        if (!$this->Auth->user()) {
+            $this->Auth->redirectUrl($this->request->here(false));
+
+            return $this->redirect($this->Auth->config('loginAction'));
+        }
+
         $clientId = $this->request->query('client_id');
         $ownerModel = $this->Auth->config('authenticate.all.userModel');
         $ownerId = $this->Auth->user(Configure::read("OAuthServer.models.{$ownerModel}.id") ?: 'id');
@@ -117,7 +114,7 @@ class OAuthController extends AppController
             ->count();
 
         if ($currentTokens > 0 || ($this->request->is('post') && $this->request->data('authorization') === 'Approve')) {
-            $redirectUri = $this->authCodeGrant->newAuthorizeRequest($ownerModel, $ownerId, $this->authParams);
+            $redirectUri = $authCodeGrant->newAuthorizeRequest($ownerModel, $ownerId, $authParams);
 
             $event = new Event('OAuthServer.afterAuthorize', $this);
             EventManager::instance()->dispatch($event);
@@ -129,7 +126,7 @@ class OAuthController extends AppController
 
             $error = new AccessDeniedException();
 
-            $redirectUri = RedirectUri::make($this->authParams['redirect_uri'], [
+            $redirectUri = RedirectUri::make($authParams['redirect_uri'], [
                 'error' => $error->errorType,
                 'message' => $error->getMessage()
             ]);
@@ -137,7 +134,7 @@ class OAuthController extends AppController
             return $this->redirect($redirectUri);
         }
 
-        $this->set('authParams', $this->authParams);
+        $this->set('authParams', $authParams);
         $this->set('user', $this->Auth->user());
         $this->set('_serialize', array_merge(['user', 'authParams'], $serializeKeys));
 
@@ -160,3 +157,4 @@ class OAuthController extends AppController
         }
     }
 }
+
