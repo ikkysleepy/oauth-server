@@ -1,4 +1,5 @@
 <?php
+
 namespace OAuthServer\Controller;
 
 use App\Controller\AppController;
@@ -9,6 +10,7 @@ use Cake\I18n\Time;
 use Cake\Network\Exception\HttpException;
 use Cake\Network\Response;
 use Cake\ORM\Query;
+use Cake\ORM\TableRegistry;
 use League\OAuth2\Server\Exception\AccessDeniedException;
 use League\OAuth2\Server\Exception\OAuthException;
 use League\OAuth2\Server\Grant\AuthCodeGrant;
@@ -65,7 +67,7 @@ class OAuthController extends AppController
      */
     public function authorize()
     {
-    /** @var AuthCodeGrant $authCodeGrant */
+        /** @var AuthCodeGrant $authCodeGrant */
         try {
             $authCodeGrant = $this->OAuth->Server->getGrantType('authorization_code');
             $authParams = $authCodeGrant->checkAuthorizeParams();
@@ -113,7 +115,14 @@ class OAuthController extends AppController
             })
             ->count();
 
-        if ($currentTokens > 0 || ($this->request->is('post') && $this->request->data('authorization') === 'Approve')) {
+        $autoApprove = TableRegistry::get('oauth_clients')->find()
+            ->where([
+                'id' => $this->request->getQuery('client_id'),
+                'redirect_uri' => $this->request->getQuery('redirect_uri'),
+                'auto_approve' => true
+            ]);
+
+        if ($autoApprove || $currentTokens > 0 || ($this->request->is('post') && $this->request->data('authorization') === 'Approve')) {
             $redirectUri = $authCodeGrant->newAuthorizeRequest($ownerModel, $ownerId, $authParams);
 
             $event = new Event('OAuthServer.afterAuthorize', $this);
