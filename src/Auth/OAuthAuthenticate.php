@@ -125,7 +125,7 @@ class OAuthAuthenticate extends BaseAuthenticate
     public function getUser(Request $request)
     {
         try {
-            $this->Server->isValidRequest(true, $request->query('access_token'));
+            $this->Server->isValidRequest(true, $request->getQuery('access_token'));
         } catch (OAuthException $e) {
             $this->_exception = $e;
 
