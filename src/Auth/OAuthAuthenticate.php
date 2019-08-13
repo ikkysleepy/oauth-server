@@ -7,8 +7,8 @@ use Cake\Core\App;
 use Cake\Database\Exception;
 use Cake\Event\Event;
 use Cake\Event\EventManager;
-use Cake\Network\Exception\BadRequestException;
-use Cake\Network\Exception\HttpException;
+use Cake\Http\Exception\BadRequestException;
+use Cake\Http\Exception\HttpException;
 use Cake\Network\Request;
 use Cake\Network\Response;
 use Cake\ORM\TableRegistry;
@@ -64,13 +64,13 @@ class OAuthAuthenticate extends BaseAuthenticate
     {
         parent::__construct($registry, $config);
 
-        if ($this->config('server')) {
-            $this->Server = $this->config('server');
+        if ($this->getConfig('server')) {
+            $this->Server = $this->getConfig('server');
 
             return;
         }
 
-        $serverConfig = $this->config('resourceServer');
+        $serverConfig = $this->getConfig('resourceServer');
         $serverClassName = App::className($serverConfig['className']);
 
         if (!$serverClassName) {
