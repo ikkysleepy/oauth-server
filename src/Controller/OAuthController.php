@@ -28,6 +28,7 @@ class OAuthController extends AppController
      */
     public function initialize()
     {
+        $this->viewBuilder()->setLayout('oauth');
         parent::initialize();
 
         if (!$this->components()->has('Auth')) {
@@ -57,7 +58,7 @@ class OAuthController extends AppController
         $this->redirect([
             'action' => 'authorize',
             '_ext' => $this->request->param('_ext'),
-            '?' => $this->request->query
+            '?' => $this->request->getQuery()
         ], 301);
     }
 
@@ -80,11 +81,11 @@ class OAuthController extends AppController
         if (!$this->Auth->user()) {
             $this->Auth->redirectUrl($this->request->here(false));
 
-            return $this->redirect($this->Auth->config('loginAction'));
+            return $this->redirect($this->Auth->getConfig('loginAction'));
         }
 
-        $clientId = $this->request->query('client_id');
-        $ownerModel = $this->Auth->config('authenticate.all.userModel');
+        $clientId = $this->request->getQuery('client_id');
+        $ownerModel = $this->Auth->getConfig('authenticate.all.userModel');
         $ownerId = $this->Auth->user(Configure::read("OAuthServer.models.{$ownerModel}.id") ?: 'id');
 
         $event = new Event('OAuthServer.beforeAuthorize', $this);
@@ -120,7 +121,7 @@ class OAuthController extends AppController
                 'id' => $this->request->getQuery('client_id'),
                 'redirect_uri' => $this->request->getQuery('redirect_uri'),
                 'auto_approve' => true
-            ]);
+            ])->count();
 
         if ($autoApprove || $currentTokens > 0 || ($this->request->is('post') && $this->request->data('authorization') === 'Approve')) {
             $redirectUri = $authCodeGrant->newAuthorizeRequest($ownerModel, $ownerId, $authParams);
@@ -160,9 +161,22 @@ class OAuthController extends AppController
             $this->set($response);
             $this->set('_serialize', array_keys($response));
         } catch (OAuthException $e) {
-            // ignoring $e->getHttpHeaders() for now
-            // it only sends WWW-Authenticate header in case of InvalidClientException
-            throw new HttpException($e->getMessage(), $e->httpStatusCode, $e);
+            if($_POST['grant_type'] == 'refresh_token' && $_POST['client_id'] == 'alexa-smart-home'){
+                $response = [ "header" => [
+                    "namespace" =>"Alexa.ConnectedHome.Control",
+                    "name" => "ExpiredAccessTokenError",
+                    "payloadVersion" => "2",
+                    "messageId" =>"e1ee71ed-952d-45fa-b2f4-2907649f48dc"
+                ],
+                    "payload" =>[]
+                ];
+                $this->set($response);
+                $this->set('_serialize', array_keys($response));
+            }else {
+                // ignoring $e->getHttpHeaders() for now
+                // it only sends WWW-Authenticate header in case of InvalidClientException
+                throw new HttpException($e->getMessage(), $e->httpStatusCode, $e);
+            }
         }
     }
 }
